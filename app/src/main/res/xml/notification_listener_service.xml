@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Contract documentation for com.aria.ai.core.system.NotificationReader.
+
+  NotificationListenerService does not use a meta-data resource; the live
+  contract is declared in AndroidManifest.xml:
+
+    android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+    <intent-filter>
+      <action android:name="android.service.notification.NotificationListenerService" />
+    </intent-filter>
+
+  THIS FILE IS DOCUMENTATION ONLY. Aria Ai keeps notification access strictly
+  opt-in and reads only the title/text/package of posted notifications so the
+  NotificationAgent can answer questions such as "what did I miss?".
+-->
+<aria-notification-listener-contract
+    component="com.aria.ai.core.system.NotificationReader"
+    maxRetained="40"
+    readsPackage="true"
+    readsTitle="true"
+    readsText="true"
+    readsConcealedContent="false"
+    uploadsContent="off-device only after an explicit user command" />

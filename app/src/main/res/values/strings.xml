@@ -1,0 +1,41 @@
+<resources>
+    <string name="app_name">Aria Ai</string>
+    <string name="home_tagline">Voice-first execution assistant</string>
+    <string name="settings_title">Settings</string>
+    <string name="providers_title">AI Providers</string>
+    <string name="back">Back</string>
+
+    <!-- Services -->
+    <string name="accessibility_service_label">Aria Ai Automation</string>
+    <string name="accessibility_service_description">Allows Aria Ai to perform navigation gestures you explicitly request (home, back, recents, lock screen, swipe). Nothing is executed without your spoken or typed command.</string>
+    <string name="notification_listener_label">Aria Ai Notification Reader</string>
+
+    <!-- Overlay foreground service -->
+    <string name="overlay_channel_name">Aria Overlay</string>
+    <string name="overlay_channel_description">Floating Aria HUD while the assistant is active</string>
+    <string name="overlay_notification_title">Aria Ai is active</string>
+    <string name="overlay_notification_text">Voice session and floating HUD running</string>
+
+    <!-- Vault / provider UI -->
+    <string name="vault_title">Encrypted API Key Vault</string>
+    <string name="vault_subtitle">Keys are encrypted with the Android Keystore (AES-256-GCM) and never leave this device.</string>
+    <string name="vault_locked_title">Vault locked</string>
+    <string name="vault_locked_body">Authenticate with your device credentials to view or edit API keys.</string>
+    <string name="vault_unlock">Unlock vault</string>
+    <string name="wipe_vault">Wipe vault</string>
+    <string name="wipe_vault_confirm">Delete every stored API key from this device?</string>
+    <string name="set_active">Set active</string>
+    <string name="active_provider">Active</string>
+    <string name="test_connection">Test connection</string>
+    <string name="save_key">Save key</string>
+    <string name="key_hint">Paste API key</string>
+    <string name="model_override_hint">Model override (optional)</string>
+    <string name="no_key_stored">No key stored</string>
+
+    <!-- Home -->
+    <string name="dock_hint">Ask Aria or hold the mic…</string>
+    <string name="status_online">Online</string>
+    <string name="status_offline">Offline</string>
+    <string name="thinking">Thinking…</string>
+    <string name="listening">Listening…</string>
+</resources>

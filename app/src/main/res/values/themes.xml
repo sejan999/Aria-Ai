@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base theme for the fully-Compose Aria Ai shell (dark quantum look). -->
+    <style name="Theme.AriaAi" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/aria_background</item>
+        <item name="android:statusBarColor">@color/aria_background</item>
+        <item name="android:navigationBarColor">@color/aria_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>

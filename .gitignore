@@ -1,0 +1,20 @@
+# Aria Ai - ignore rules
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+build/
+/captures
+.externalNativeBuild/
+.cxx/
+.kotlin/
+*.hprof
+*.apk.idsig
+
+# Build outputs / binaries — the APK ships as a GitHub Release asset, not in the tree
+*.apk
+/AriaAi-debug.apk
+
+/app/release/
+local.properties

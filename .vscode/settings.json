@@ -1,0 +1,13 @@
+{
+  "files.exclude": {
+    "**/.gradle": true,
+    "**/build": true
+  },
+  "editor.formatOnSave": false,
+  "editor.tabSize": 4,
+  "kotlin.code.style": "official",
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "search.exclude": {
+    "**/build": true
+  }
+}

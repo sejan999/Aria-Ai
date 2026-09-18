@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Aria Ai quantum palette -->
+    <color name="aria_background">#FF060913</color>
+    <color name="aria_surface">#FF0C1424</color>
+    <color name="aria_surface_elevated">#FF141F35</color>
+    <color name="aria_neon_cyan">#FF22D3EE</color>
+    <color name="aria_neon_purple">#FFA855F7</color>
+    <color name="aria_neon_blue">#FF3B82F6</color>
+    <color name="aria_text_primary">#FFE6F1FF</color>
+    <color name="aria_text_dim">#FF8CA3C0</color>
+    <color name="aria_outline">#FF23324D</color>
+    <color name="aria_error">#FFFF6B81</color>
+    <color name="aria_success">#FF34D399</color>
+    <color name="aria_launcher_background">#FF060913</color>
+</resources>
