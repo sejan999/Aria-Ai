@@ -9,8 +9,11 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import com.aria.ai.core.ml.WakeWordDetector
+import com.aria.ai.core.network.GeminiLiveSocket
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,7 +35,8 @@ class AudioBridge @Inject constructor(
     @ApplicationContext private val context: Context,
     private val recorder: PcmAudioRecorder,
     private val player: PcmAudioPlayer,
-    private val wakeWordDetector: WakeWordDetector
+    private val wakeWordDetector: WakeWordDetector,
+    private val liveSocket: GeminiLiveSocket
 ) {
 
     /** Progress of one speech-recognition pass. */
@@ -169,7 +173,73 @@ class AudioBridge @Inject constructor(
 
     fun stopPlayback() = player.stopAll()
 
+    // -------------------------------------------------- full-duplex live stream
+
+    /** Live events surfaced by the Gemini Live session. */
+    val liveEvents: Flow<GeminiLiveSocket.LiveEvent?> get() = liveFlow
+
+    private val liveFlow = MutableStateFlow<GeminiLiveSocket.LiveEvent?>(null)
+
+    private var streamingJob: kotlinx.coroutines.Job? = null
+    private var streamingScope: kotlinx.coroutines.CoroutineScope? = null
+
+    /**
+     * Opens a full-duplex Gemini Live session: starts the PCM recorder and
+     * forwards every captured chunk into the live socket while relaying model
+     * audio back through [PcmAudioPlayer]. Returns `true` when capture started.
+     */
+    fun startStreaming(sampleRate: Int = GeminiLiveSocket.INPUT_SAMPLE_RATE): Boolean {
+        if (streamingJob?.isActive == true) return true
+        if (!hasRecordPermission()) return false
+
+        val scope = kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO
+        )
+        streamingScope = scope
+
+        val captureStarted = recorder.start(sampleRate) { chunk ->
+            liveSocket.sendPcm(chunk, sampleRate)
+        }
+        if (!captureStarted) {
+            scope.cancel()
+            streamingScope = null
+            return false
+        }
+
+        streamingJob = scope.launch {
+            liveSocket.connect()
+                .collect { event ->
+                    liveFlow.value = event
+                    if (event is GeminiLiveSocket.LiveEvent.Audio) {
+                        val samples = ShortArray(event.pcm16.size / 2)
+                        java.nio.ByteBuffer.wrap(event.pcm16)
+                            .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                            .asShortBuffer().get(samples)
+                        if (player.prepare(event.sampleRate)) player.write(samples)
+                    }
+                }
+        }
+        return true
+    }
+
+    /** Tears down the live session and stops the recorder. */
+    fun stopStreaming() {
+        streamingJob?.cancel()
+        streamingJob = null
+        streamingScope?.cancel()
+        streamingScope = null
+        liveSocket.disconnect()
+        recorder.stop()
+        _listening.value = false
+    }
+
+    private fun hasRecordPermission(): Boolean =
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
     fun shutdown() {
+        stopStreaming()
         stopPcmCapture()
         stopPlayback()
     }

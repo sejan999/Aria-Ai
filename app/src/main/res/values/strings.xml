@@ -37,5 +37,13 @@
     <string name="status_online">Online</string>
     <string name="status_offline">Offline</string>
     <string name="thinking">Thinking…</string>
+    <!-- Always-listening service -->
+    <string name="listener_channel_name">Aria Always Listening</string>
+    <string name="listener_channel_description">Persistent notification while Aria listens for the wake word</string>
+    <string name="listener_title">Aria Ai is listening</string>
+    <string name="listener_text">Say \u201cHey Aria\u201d to wake me up</string>
+    <string name="listener_active_title">Aria Ai is streaming</string>
+    <string name="listener_active_text">Full-duplex voice session running</string>
+    <string name="listener_stop">Stop</string>
     <string name="listening">Listening…</string>
 </resources>

@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aria.ai.agents.MasterBrain
+import com.aria.ai.core.audio.AriaListenerService
 import com.aria.ai.core.ml.WakeWordDetector
 import com.aria.ai.core.network.NetworkMonitor
 import com.aria.ai.core.overlay.AriaOverlayFGS
@@ -47,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -69,6 +72,7 @@ data class SettingsUiState(
     val gemmaModelPath: String = "",
     val notificationAccess: Boolean = false,
     val overlayActive: Boolean = false,
+    val alwaysListening: Boolean = false,
     val online: Boolean = true,
     val ttsReady: Boolean = false,
     val agentNames: List<String> = emptyList(),
@@ -103,7 +107,7 @@ class SettingsViewModel @Inject constructor(
     private val wakeModelPath = MutableStateFlow("")
     private val turnCount = MutableStateFlow(0)
     private val overlayRunning = MutableStateFlow(false)
-
+    private val listeningActive = MutableStateFlow(false)
     private val preferences = combine(
         settings.autoSpeak,
         settings.wakeWord,
@@ -114,13 +118,17 @@ class SettingsViewModel @Inject constructor(
         PreferenceSnapshot(autoSpeak, wake, gemma.orEmpty(), wakePath, turns)
     }
 
+    /** Overlay + always-listening flags, packed as a Pair to stay within the 5-arg combine overload. */
+    private val serviceFlags: kotlinx.coroutines.flow.Flow<Pair<Boolean, Boolean>> =
+        combine(overlayRunning, listeningActive) { overlay, listening -> overlay to listening }
+
     val state: StateFlow<SettingsUiState> = combine(
         preferences,
         NotificationReader.connected,
         tts.ready,
         network.online,
-        overlayRunning
-    ) { prefs, notifications, ttsReady, online, overlay ->
+        serviceFlags
+    ) { prefs, notifications, ttsReady, online, (overlay, listening) ->
         SettingsUiState(
             autoSpeak = prefs.autoSpeak,
             wakeWord = prefs.wakeWord,
@@ -129,6 +137,7 @@ class SettingsViewModel @Inject constructor(
             gemmaModelPath = prefs.gemmaPath,
             notificationAccess = notifications,
             overlayActive = overlay,
+            alwaysListening = listening,
             online = online,
             ttsReady = ttsReady,
             agentNames = brain.agentNames,
@@ -188,6 +197,19 @@ class SettingsViewModel @Inject constructor(
         overlayRunning.value = false
     }
 
+    // --------------------------------------------------- always listening
+
+    fun startAlwaysListening(context: Context) {
+        val intent = Intent(context, AriaListenerService::class.java)
+        ContextCompat.startForegroundService(context, intent)
+        listeningActive.value = true
+    }
+
+    fun stopAlwaysListening(context: Context) {
+        context.stopService(Intent(context, AriaListenerService::class.java))
+        listeningActive.value = false
+    }
+
     fun notificationAccessIntent(): Intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
 
     fun accessibilityIntent(): Intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
@@ -216,6 +238,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { /* system screens report nothing back; the status flows update themselves */ }
@@ -373,6 +396,17 @@ fun SettingsScreen(
                 action = "Grant",
                 onClick = { launcher.launch(viewModel.writeSettingsIntent()) }
             )
+
+            AlwaysListeningRow(
+                enabled = state.alwaysListening,
+                onToggle = { enabled ->
+                    if (enabled) {
+                        viewModel.startAlwaysListening(context)
+                    } else {
+                        viewModel.stopAlwaysListening(context)
+                    }
+                }
+            )
         }
 
         GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -425,5 +459,44 @@ private fun ServiceRow(
             Text(status, color = MistDim, style = MaterialTheme.typography.bodySmall)
         }
         TextButton(onClick = onClick) { Text(action, color = NeonPurple) }
+    }
+}
+
+/**
+ * The always-listening control: a switch that starts/stops
+ * [AriaListenerService], the microphone foreground service that watches for the
+ * wake word and opens a full-duplex Gemini Live session.
+ */
+@Composable
+private fun AlwaysListeningRow(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text("Always listening", color = MistWhite, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = if (enabled) {
+                    "Microphone service active — say \u201cHey Aria\u201d"
+                } else {
+                    "Off — tap to watch for the wake word"
+                },
+                color = MistDim,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        Switch(
+            checked = enabled,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = NeonCyan,
+                checkedTrackColor = NeonPurple
+            )
+        )
     }
 }

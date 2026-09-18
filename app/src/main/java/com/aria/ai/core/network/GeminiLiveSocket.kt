@@ -45,6 +45,36 @@ class GeminiLiveSocket @Inject constructor(
 
     val isConnected: Boolean get() = socket != null
 
+    /**
+     * Sends one PCM-16 chunk as a `realtimeInput` media chunk. Safe to call
+     * before the socket opens (silently dropped) and from any thread.
+     */
+    fun sendPcm(samples: ShortArray, sampleRate: Int = INPUT_SAMPLE_RATE) {
+        val ws = socket ?: return
+        val bytes = ByteArray(samples.size * 2)
+        java.nio.ByteBuffer.wrap(bytes)
+            .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            .asShortBuffer().put(samples)
+        val payload = JSONObject().put(
+            "realtimeInput",
+            JSONObject().put(
+                "mediaChunks",
+                JSONArray().put(
+                    JSONObject()
+                        .put("mimeType", "audio/pcm;rate=$sampleRate")
+                        .put("data", Base64.encodeToString(bytes, Base64.NO_WRAP))
+                )
+            )
+        )
+        ws.send(payload.toString())
+    }
+
+    /** Closes the current live session (idempotent). */
+    fun disconnect() {
+        runCatching { socket?.close(NORMAL_CLOSURE, null) }
+        socket = null
+    }
+
     /** Opens a session; the socket closes with the collector. */
     fun connect(
         model: String = DEFAULT_MODEL,
@@ -52,7 +82,7 @@ class GeminiLiveSocket @Inject constructor(
         modalities: List<String> = listOf("AUDIO")
     ): Flow<LiveEvent> = callbackFlow {
         val apiKey = keys.requireKey(ProviderIds.GEMINI, "Google Gemini")
-        val request = Request.Builder().url("$WS_ENDPOINT?key=$apiKey").build()
+        val request = Request.Builder().url("$LIVE_WS_BASE?key=$apiKey").build()
 
         val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -214,11 +244,26 @@ class GeminiLiveSocket @Inject constructor(
     }
 
     companion object {
-        const val DEFAULT_MODEL = "gemini-2.0-flash-exp"
+        /** Live API model: real-time, full-duplex audio-to-audio dialogue. */
+        const val DEFAULT_MODEL = "gemini-3.8-live"
+
+        /** Alias kept explicit for callers that pick the live brain by name. */
+        const val LIVE_MODEL = DEFAULT_MODEL
+
         const val INPUT_SAMPLE_RATE = 16_000
         const val OUTPUT_SAMPLE_RATE = 24_000
         private const val NORMAL_CLOSURE = 1000
-        private const val WS_ENDPOINT =
+
+        /**
+         * BidiGenerateContent websocket endpoint (v1beta).
+         *
+         * Authentication for the websocket is the API key as a **query
+         * parameter** — that is the documented scheme for this endpoint (unlike
+         * the REST API, which takes `x-goog-api-key`). It is safe here because
+         * the OkHttp interceptor in `NetworkModule` logs only method, host, path
+         * and status, so the query string can never reach logcat.
+         */
+        private const val LIVE_WS_BASE =
             "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
         private const val DEFAULT_SYSTEM =
             "You are Aria Ai, a voice-first Android assistant. Answer briefly and speak naturally."

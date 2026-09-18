@@ -19,6 +19,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Always-listening (reboot persistence) -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <!-- Floating quantum HUD -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
@@ -72,6 +75,33 @@
             android:name=".core.overlay.AriaOverlayFGS"
             android:exported="false"
             android:foregroundServiceType="microphone|mediaPlayback" />
+
+        <!-- Always-listening wake-word foreground service -->
+        <service
+            android:name=".core.audio.AriaListenerService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- Quick Settings tile for always-listening -->
+        <service
+            android:name=".core.audio.AriaTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_aria_tile"
+            android:label="Aria Ai"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- Reboot persistence for always-listening -->
+        <receiver
+            android:name=".core.audio.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Notification agent source -->
         <service

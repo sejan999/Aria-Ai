@@ -18,6 +18,33 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
+ * Model IDs for the Gemini Generative Language API.
+ *
+ * Verified against the official model cards (September 2026):
+ *  • [CHAT]  `gemini-3.8-flash`      — flagship Flash model: text, vision, tools.
+ *  • [LIVE]  `gemini-3.8-live`       — stable Live API model: real-time
+ *    audio-to-audio dialogue (see `GeminiLiveSocket`).
+ *  • [LIGHT] `gemini-3.5-flash-lite` — low-latency / low-cost text model for
+ *    high-volume digests and extraction. It does **not** support the Live API.
+ *
+ * The retired ids (`gemini-1.5-flash`, `gemini-2.5-flash`,
+ * `gemini-2.0-flash-exp`) must not be used: the API rejects them with
+ * `404 MODEL_NOT_FOUND`, which is what broke the previous build.
+ *
+ * Model selection: [CHAT] answers every turn. To pin a different model for one
+ * call, pass it through `ChatOptions(model = …)` — the Settings screen does this
+ * through its per-provider model override — or set `defaultModel` here.
+ */
+object GeminiModels {
+    const val CHAT = "gemini-3.8-flash"
+    const val LIVE = "gemini-3.8-live"
+    const val LIGHT = "gemini-3.5-flash-lite"
+
+    /** Text models offered as overrides, newest / strongest first. */
+    val CHAT_MODELS: List<String> = listOf(CHAT, LIGHT)
+}
+
+/**
  * Google Gemini adapter (Generative Language REST API, SSE streaming).
  *
  * The key travels in the `x-goog-api-key` header instead of the query string so
@@ -32,8 +59,11 @@ class GeminiAdapter @Inject constructor(
 
     override val id: String = ProviderIds.GEMINI
     override val displayName: String = "Google Gemini"
-    override val defaultModel: String = "gemini-1.5-flash"
+    override val defaultModel: String = GeminiModels.CHAT
     override val supportsVision: Boolean = true
+
+    /** Low-latency, cost-efficient model offered as an opt-in override. */
+    val lightModel: String get() = GeminiModels.LIGHT
 
     override suspend fun chat(messages: List<Message>, options: ChatOptions): ChatResponse =
         aggregateViaStream(this, messages, options)
