@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.aria.ai.agents.MasterBrain
 import com.aria.ai.core.ai.ProviderIds
 import com.aria.ai.core.ai.ProviderRegistry
+import com.aria.ai.core.ai.model.TaskType
 import com.aria.ai.core.audio.AudioBridge
 import com.aria.ai.core.network.NetworkMonitor
 import com.aria.ai.core.vision.ScreenCaptureManager
@@ -72,6 +73,7 @@ import com.aria.ai.ui.theme.NeonPurple
 data class HomeUiState(
     val statusLine: String = "Booting Aria…",
     val providerName: String = "…",
+    val providerModel: String? = null,
     val online: Boolean = true,
     val listening: Boolean = false,
     val thinking: Boolean = false,
@@ -114,9 +116,20 @@ class HomeViewModel @Inject constructor(
     private val hint = MutableStateFlow<String?>(null)
     val hintMessage: StateFlow<String?> = hint.asStateFlow()
 
+    /** Auto-selected CHAT model for the active provider, kept in sync on change. */
+    private val activeModel = MutableStateFlow<String?>(null)
+
     init {
         network.start()
         viewModelScope.launch { conversations.ensureConversation() }
+        // Resolve (and 24h-cache) the model the active brain will actually use.
+        viewModelScope.launch {
+            settings.activeProviderId.collect { providerId ->
+                activeModel.value = runCatching {
+                    registry.modelFor(providerId, TaskType.CHAT)
+                }.getOrNull()
+            }
+        }
     }
 
     private val session = combine(
@@ -130,8 +143,9 @@ class HomeViewModel @Inject constructor(
 
     private val connectivity = combine(
         network.online,
-        settings.activeProviderId
-    ) { online, providerId -> online to providerId }
+        settings.activeProviderId,
+        activeModel
+    ) { online, providerId, model -> Triple(online, providerId, model) }
 
     val state: StateFlow<HomeUiState> = combine(
         connectivity,
@@ -143,6 +157,7 @@ class HomeViewModel @Inject constructor(
         HomeUiState(
             statusLine = statusFor(conn.first, sess, armed),
             providerName = ProviderIds.displayName(conn.second),
+            providerModel = conn.third,
             online = conn.first,
             listening = sess.listening || sess.preparing,
             thinking = sess.busy,
@@ -301,7 +316,7 @@ fun HomeScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "${state.providerName} · ${state.statusLine}",
+                    text = "${state.providerName} • ${state.providerModel ?: "auto"} · ${state.statusLine}",
                     style = MaterialTheme.typography.bodySmall,
                     color = if (state.online) MistDim else AriaWarning
                 )

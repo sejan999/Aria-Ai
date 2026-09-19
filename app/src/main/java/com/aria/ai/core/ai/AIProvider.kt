@@ -4,7 +4,12 @@ import com.aria.ai.core.ai.model.ChatChunk
 import com.aria.ai.core.ai.model.ChatOptions
 import com.aria.ai.core.ai.model.ChatResponse
 import com.aria.ai.core.ai.model.Message
+import com.aria.ai.core.ai.model.ModelInfo
+import com.aria.ai.core.ai.model.TaskType
 import kotlinx.coroutines.flow.Flow
+
+/** Shown wherever a model id is expected before discovery has completed. */
+const val AUTO_MODEL_LABEL = "auto"
 
 /** Canonical provider identifiers used by the vault, registry and settings. */
 object ProviderIds {
@@ -50,6 +55,15 @@ interface AIProvider {
 
     val id: String
     val displayName: String
+
+    /**
+     * Display placeholder for this provider.
+     *
+     * Model names are never hardcoded: adapters resolve them through their
+     * `AutoModelSelector`. Implementations therefore return the *currently
+     * cached* CHAT selection when one exists, and [AUTO_MODEL_LABEL] otherwise,
+     * so the Settings screen shows the real id as soon as discovery completes.
+     */
     val defaultModel: String
 
     /** True when this adapter can consume [Message.imageBase64] payloads. */
@@ -64,6 +78,24 @@ interface AIProvider {
     suspend fun chat(messages: List<Message>, options: ChatOptions = ChatOptions()): ChatResponse
 
     fun streamChat(messages: List<Message>, options: ChatOptions = ChatOptions()): Flow<ChatChunk>
+
+    // ------------------------------------------------- automatic model selection
+
+    /**
+     * The model this adapter would use for [task] right now, resolving and
+     * caching through the provider's ListModels endpoint. Null when the provider
+     * cannot serve the task at all (realtime audio on Anthropic/Mistral/OpenRouter).
+     */
+    suspend fun currentModelFor(task: TaskType): String? = null
+
+    /**
+     * Clears the cached catalogue and selections so the next call re-discovers.
+     * Backs the "Refresh Models" button.
+     */
+    suspend fun refreshModels() = Unit
+
+    /** The discovered catalogue, or an empty list when unavailable/uncached. */
+    suspend fun availableModels(): List<ModelInfo> = emptyList()
 
     /**
      * Round-trips a tiny prompt to prove the credentials work. Never throws:

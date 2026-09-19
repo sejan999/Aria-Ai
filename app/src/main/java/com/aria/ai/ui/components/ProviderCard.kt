@@ -49,6 +49,7 @@ fun ProviderCard(
     onClearKey: () -> Unit,
     onTest: () -> Unit,
     onActivate: () -> Unit,
+    onRefreshModels: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     GlassCard(
@@ -164,5 +165,71 @@ fun ProviderCard(
                 color = if (result.startsWith("OK")) AriaSuccess else AriaError
             )
         }
+
+        Spacer(Modifier.height(10.dp))
+
+        // Auto-selected models. Read-only by design: the user never picks a model.
+        ModelRow("Active model (Chat)", status.chatModel)
+        ModelRow("Active model (Vision)", status.visionModel, unavailable = !status.supportsVision)
+        ModelRow("Active model (Audio)", status.audioModel)
+
+        if (status.catalogueSize > 0) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "${status.catalogueSize} models discovered · cached ${cacheAgeLabel(status.cacheAgeMillis)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MistDim
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        OutlinedButton(onClick = onRefreshModels, enabled = !busy) {
+            Text("Refresh Models", color = NeonCyan)
+        }
+    }
+}
+
+/** Human-readable cache age, e.g. "just now" or "3h ago". */
+private fun cacheAgeLabel(ageMillis: Long?): String {
+    if (ageMillis == null) return "not yet"
+    val minutes = ageMillis / 60_000
+    return when {
+        minutes < 1 -> "just now"
+        minutes < 60 -> "${minutes}m ago"
+        else -> "${minutes / 60}h ago"
+    }
+}
+
+/**
+ * One read-only "Active model (…)" row. [unavailable] renders "N/A" for tasks the
+ * provider genuinely cannot serve (e.g. realtime audio on Anthropic).
+ */
+@Composable
+private fun ModelRow(
+    label: String,
+    model: String?,
+    unavailable: Boolean = false
+) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MistDim,
+            modifier = Modifier.width(150.dp)
+        )
+        Text(
+            text = when {
+                unavailable -> "N/A"
+                model.isNullOrBlank() -> "not selected yet"
+                else -> model
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = when {
+                unavailable -> MistDim
+                model.isNullOrBlank() -> MistDim
+                else -> NeonCyan
+            }
+        )
     }
 }

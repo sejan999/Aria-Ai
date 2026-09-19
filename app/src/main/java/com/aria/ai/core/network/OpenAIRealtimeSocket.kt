@@ -1,9 +1,15 @@
 package com.aria.ai.core.network
 
 import android.util.Base64
+import com.aria.ai.core.ai.InvalidApiKeyException
 import com.aria.ai.core.ai.KeyProvider
 import com.aria.ai.core.ai.KeyRedactor
+import com.aria.ai.core.ai.ModelDiscoveryFailedException
+import com.aria.ai.core.ai.ModelResolver
+import com.aria.ai.core.ai.PermissionDeniedException
 import com.aria.ai.core.ai.ProviderIds
+import com.aria.ai.core.ai.discovery.OpenAIModelDiscovery
+import com.aria.ai.core.ai.model.TaskType
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -23,11 +29,17 @@ import javax.inject.Singleton
  *
  * Complements [GeminiLiveSocket]: Aria can run either realtime backend with the
  * same push-to-talk UX. PCM is 24 kHz mono 16-bit on both directions.
+ *
+ * The realtime model id is **never hardcoded**: it comes from the OpenAI model
+ * catalogue ranked for [TaskType.AUDIO_LIVE] (any id containing `realtime`) and
+ * is cached for 24 hours.
  */
 @Singleton
 class OpenAIRealtimeSocket @Inject constructor(
     private val client: OkHttpClient,
-    private val keys: KeyProvider
+    private val keys: KeyProvider,
+    private val resolver: ModelResolver,
+    private val selector: OpenAIModelDiscovery
 ) {
 
     /** Everything the Realtime API can tell Aria. */
@@ -51,13 +63,22 @@ class OpenAIRealtimeSocket @Inject constructor(
      * the socket is closed automatically when the collector is cancelled.
      */
     fun connect(
-        model: String = DEFAULT_MODEL,
+        model: String? = null,
         voice: String = DEFAULT_VOICE,
         instructions: String = DEFAULT_INSTRUCTIONS
     ): Flow<RealtimeEvent> = callbackFlow {
         val apiKey = keys.requireKey(ProviderIds.OPENAI, "OpenAI")
+        // Auto-selected realtime model; an explicit override still wins.
+        val realtimeModel = model?.takeIf { it.isNotBlank() }
+            ?: resolver.resolveOrNull(selector, ProviderIds.OPENAI, apiKey, TaskType.AUDIO_LIVE)
+            ?: throw ModelDiscoveryFailedException(
+                ProviderIds.OPENAI,
+                IllegalStateException(
+                    "No OpenAI model advertises realtime audio for this key, so live voice is unavailable."
+                )
+            )
         val request = Request.Builder()
-            .url("$WS_ENDPOINT?model=$model")
+            .url("$WS_ENDPOINT?model=$realtimeModel")
             .header("Authorization", "Bearer $apiKey")
             .header("OpenAI-Beta", "realtime=v1")
             .build()
@@ -89,7 +110,25 @@ class OpenAIRealtimeSocket @Inject constructor(
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 socket = null
-                trySend(RealtimeEvent.Failed(KeyRedactor.scrub(t.message ?: "realtime socket failure")))
+                // The handshake status tells us whether the credential was the problem.
+                when (response?.code) {
+                    401 -> trySend(
+                        RealtimeEvent.Failed(InvalidApiKeyException(ProviderIds.OPENAI).message.orEmpty())
+                    )
+
+                    403 -> trySend(
+                        RealtimeEvent.Failed(
+                            PermissionDeniedException(
+                                ProviderIds.OPENAI,
+                                KeyRedactor.scrub(response.message.ifBlank { "realtime access not permitted" })
+                            ).message.orEmpty()
+                        )
+                    )
+
+                    else -> trySend(
+                        RealtimeEvent.Failed(KeyRedactor.scrub(t.message ?: "realtime socket failure"))
+                    )
+                }
                 close()
             }
         }
@@ -230,7 +269,12 @@ class OpenAIRealtimeSocket @Inject constructor(
     }
 
     companion object {
-        const val DEFAULT_MODEL = "gpt-4o-realtime-preview"
+        /**
+         * The realtime model is NOT pinned here. It is discovered from the OpenAI
+         * model catalogue and ranked for the AUDIO_LIVE task (ids containing
+         * `realtime`), then cached for 24 hours by `ModelCache`.
+         */
+
         const val DEFAULT_VOICE = "alloy"
         const val OUTPUT_SAMPLE_RATE = 24_000
         private const val WS_ENDPOINT = "wss://api.openai.com/v1/realtime"

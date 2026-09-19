@@ -1,9 +1,15 @@
 package com.aria.ai.core.network
 
 import android.util.Base64
+import com.aria.ai.core.ai.InvalidApiKeyException
 import com.aria.ai.core.ai.KeyProvider
 import com.aria.ai.core.ai.KeyRedactor
+import com.aria.ai.core.ai.ModelDiscoveryFailedException
+import com.aria.ai.core.ai.ModelResolver
+import com.aria.ai.core.ai.PermissionDeniedException
 import com.aria.ai.core.ai.ProviderIds
+import com.aria.ai.core.ai.discovery.GeminiModelDiscovery
+import com.aria.ai.core.ai.model.TaskType
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -22,11 +28,17 @@ import javax.inject.Singleton
  * Gemini Live (BidiGenerateContent) websocket client: a full-duplex voice loop
  * over one socket (raw PCM in, PCM/text out) with barge-in support through
  * `serverContent.interrupted`. Built from OkHttp + org.json only.
+ *
+ * The live model id is **never hardcoded**: it is discovered from the Gemini
+ * ListModels endpoint and ranked for [TaskType.AUDIO_LIVE] (i.e. the model that
+ * advertises `bidiGenerateContent`), then cached for 24 hours.
  */
 @Singleton
 class GeminiLiveSocket @Inject constructor(
     private val client: OkHttpClient,
-    private val keys: KeyProvider
+    private val keys: KeyProvider,
+    private val resolver: ModelResolver,
+    private val selector: GeminiModelDiscovery
 ) {
 
     /** Everything the Live API can tell Aria. */
@@ -77,18 +89,27 @@ class GeminiLiveSocket @Inject constructor(
 
     /** Opens a session; the socket closes with the collector. */
     fun connect(
-        model: String = DEFAULT_MODEL,
+        model: String? = null,
         systemInstruction: String = DEFAULT_SYSTEM,
         modalities: List<String> = listOf("AUDIO")
     ): Flow<LiveEvent> = callbackFlow {
         val apiKey = keys.requireKey(ProviderIds.GEMINI, "Google Gemini")
+        // Auto-selected realtime model; an explicit override still wins.
+        val liveModel = model?.takeIf { it.isNotBlank() }
+            ?: resolver.resolveOrNull(selector, ProviderIds.GEMINI, apiKey, TaskType.AUDIO_LIVE)
+            ?: throw ModelDiscoveryFailedException(
+                ProviderIds.GEMINI,
+                IllegalStateException(
+                    "No Gemini model advertises bidiGenerateContent for this key, so live voice is unavailable."
+                )
+            )
         val request = Request.Builder().url("$LIVE_WS_BASE?key=$apiKey").build()
 
         val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 socket = webSocket
                 trySend(LiveEvent.Opened)
-                webSocket.send(setupFrame(model, systemInstruction, modalities))
+                webSocket.send(setupFrame(liveModel, systemInstruction, modalities))
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -112,7 +133,25 @@ class GeminiLiveSocket @Inject constructor(
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 socket = null
-                trySend(LiveEvent.Failed(KeyRedactor.scrub(t.message ?: "live socket failure")))
+                // The handshake status tells us whether the credential was the problem.
+                when (response?.code) {
+                    401 -> trySend(
+                        LiveEvent.Failed(InvalidApiKeyException(ProviderIds.GEMINI).message.orEmpty())
+                    )
+
+                    403 -> trySend(
+                        LiveEvent.Failed(
+                            PermissionDeniedException(
+                                ProviderIds.GEMINI,
+                                KeyRedactor.scrub(response.message.ifBlank { "live access not permitted" })
+                            ).message.orEmpty()
+                        )
+                    )
+
+                    else -> trySend(
+                        LiveEvent.Failed(KeyRedactor.scrub(t.message ?: "live socket failure"))
+                    )
+                }
                 close()
             }
         }
@@ -244,11 +283,12 @@ class GeminiLiveSocket @Inject constructor(
     }
 
     companion object {
-        /** Live API model: real-time, full-duplex audio-to-audio dialogue. */
-        const val DEFAULT_MODEL = "gemini-3.8-live"
-
-        /** Alias kept explicit for callers that pick the live brain by name. */
-        const val LIVE_MODEL = DEFAULT_MODEL
+        /**
+         * The Live model is NOT pinned here. It is discovered from the Gemini
+         * model catalogue and ranked for the AUDIO_LIVE task (any model whose
+         * `supportedGenerationMethods` contains `bidiGenerateContent`), then
+         * cached for 24 hours by `ModelCache`.
+         */
 
         const val INPUT_SAMPLE_RATE = 16_000
         const val OUTPUT_SAMPLE_RATE = 24_000
